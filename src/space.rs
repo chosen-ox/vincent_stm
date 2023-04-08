@@ -1,5 +1,5 @@
-use std::any::Any;
 use super::tvar::Tvar;
+use std::any::Any;
 use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
 use std::thread::spawn;
@@ -12,9 +12,18 @@ pub struct Space {
 
 impl Space {
     pub fn new(id: usize) -> Space {
+        if id == 0 {
+            panic!("Space id can not be 0!");
+        }
         Space {
             version: Arc::new(RwLock::new(0)),
             id,
+        }
+    }
+    pub fn new_single_var_space() -> Space {
+        Space {
+            version: Arc::new(RwLock::new(0)),
+            id: 0,
         }
     }
 
@@ -29,10 +38,6 @@ impl Space {
             return true;
         }
         false
-    }
-
-    pub fn add_var<T: Any + Send + Sync + Clone>(&self, var: &mut Tvar<T>) {
-        var.set_space(self.clone());
     }
 }
 
@@ -59,7 +64,7 @@ impl Ord for Space {
 #[cfg(test)]
 #[test]
 fn test_space() {
-    let space = Space::new(0);
+    let space = Space::new_single_var_space();
     assert_eq!(space.read_version(), 0);
     assert_eq!(space.write_version(0), true);
     let space1 = space.clone();

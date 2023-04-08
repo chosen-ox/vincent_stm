@@ -1,66 +1,108 @@
 use std::any::Any;
-use super::space::Space;
 use std::cmp::Ordering;
+use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 
+use crate::space::Space;
+use crate::ArcAny;
+
+pub struct Mtx {
+    pub value: Mutex<ArcAny>,
+    space: Space,
+}
+
+impl Mtx {
+    pub fn new(value: ArcAny, space: Space) -> Arc<Mtx> {
+        let mtx = Mtx {
+            value: Mutex::new(value),
+            space,
+        };
+        Arc::new(mtx)
+    }
+
+    pub fn get_space(&self) -> Space {
+        self.space.clone()
+    }
+
+    pub fn get_address(&self) -> usize {
+        self as *const Mtx as usize
+    }
+}
+
+
+
+impl Eq for Mtx {}
+
+impl PartialEq for Mtx {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_address() == other.get_address()
+    }
+}
+
+impl Ord for Mtx {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.get_address().cmp(&other.get_address())
+    }
+}
+
+impl PartialOrd for Mtx {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[derive(Clone)]
 pub struct Tvar<T> {
-    value: Arc<Mutex<T>>,
-    space: Option<Space>,
+    arc_mtx: Arc<Mtx>,
+    _marker: PhantomData<T>,
 }
 
 impl<T> Tvar<T>
 where
-    T: Any + Send + Sync + Clone
+    T: Any + Send + Sync + Clone,
 {
     pub fn new(value: T) -> Tvar<T> {
+        let space = Space::new_single_var_space();
         Tvar {
-            value: Arc::new(Mutex::new(value)),
-            space: None,
+            arc_mtx: Mtx::new(Arc::new(value), space),
+            _marker: PhantomData,
         }
     }
 
     pub fn new_with_space(value: T, space: Space) -> Tvar<T> {
         Tvar {
-            value: Arc::new(Mutex::new(value)),
-            space: Some(space),
+            arc_mtx: Mtx::new(Arc::new(value), space),
+            _marker: PhantomData,
         }
     }
 
-    pub fn set_space(&mut self, space: Space) {
-        self.space = Some(space);
+    pub fn get_mtx_ref(&self) -> Arc<Mtx> {
+        self.arc_mtx.clone()
     }
 
-    pub fn read(&self) -> T
-    where
-        T: Clone,
-    {
-        self.value.lock().unwrap().clone()
+    pub fn atomic_read(&self) -> ArcAny {
+        self.arc_mtx.value.lock().unwrap().clone()
     }
 
-    pub fn write(&self, value: T) {
-        *self.value.lock().unwrap() = value;
+    pub fn atomic_write(&self, value: T) {
+        *self.arc_mtx.value.lock().unwrap() = Arc::new(value);
     }
 }
 
 #[cfg(test)]
 #[test]
 fn test_tvar() {
-    let mut tvar = Tvar::new(0);
-    assert_eq!(tvar.read(), 0);
-    let space = Space::new(2);
-    space.add_var(&mut tvar);
-    if let Some(ref space) = tvar.space {
-        assert_eq!(space.cmp(&Space::new(1)), Ordering::Greater);
-    } else {
-        panic!("no value in tvar")
-    }
+    let space = Space::new(1);
+    let tvar = Tvar::new_with_space(0, space.clone());
+    assert_eq!(*tvar.atomic_read().downcast_ref::<i32>().unwrap(), 0);
+    let s = tvar.get_mtx_ref().get_space();
+    assert_eq!(s.cmp(&Space::new(2)), Ordering::Less);
     let tvar1 = tvar.clone();
     spawn(move || {
-        tvar1.write(5);
+        tvar1.atomic_write(5);
     })
     .join()
     .unwrap();
-    assert_eq!(tvar.read(), 5);
+    assert_eq!(*tvar.atomic_read().downcast_ref::<i32>().unwrap(), 5);
 }
