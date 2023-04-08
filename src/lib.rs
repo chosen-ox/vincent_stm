@@ -1,14 +1,13 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+extern crate core;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+mod space;
+mod tvar;
+mod transaction;
+pub use space::Space;
+pub use tvar::Tvar;
+fn atomically<F, T>(f: F) -> T
+where
+    F: Fn() -> T,
+{
+    f()
 }
