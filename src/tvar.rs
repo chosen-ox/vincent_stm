@@ -2,14 +2,17 @@ use std::any::Any;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
+
+#[cfg(test)]
 use std::thread::spawn;
 
 use crate::space::Space;
 use crate::ArcAny;
+use crate::Transaction;
 
 pub struct Mtx {
     pub value: Mutex<ArcAny>,
-    space: Space,
+    pub space: Space,
 }
 
 impl Mtx {
@@ -30,19 +33,23 @@ impl Mtx {
     }
 }
 
-
-
 impl Eq for Mtx {}
 
 impl PartialEq for Mtx {
     fn eq(&self, other: &Self) -> bool {
-        self.get_address() == other.get_address()
+        if self.get_space().get_id() + other.get_space().get_id() == 0 {
+            return self.get_address() == other.get_address();
+        }
+        self.get_space().get_id() == other.get_space().get_id()
     }
 }
 
 impl Ord for Mtx {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.get_address().cmp(&other.get_address())
+        if self.get_space().get_id() + other.get_space().get_id() == 0 {
+            return self.get_address().cmp(&other.get_address());
+        }
+        self.get_space().get_id().cmp(&other.get_space().get_id())
     }
 }
 
@@ -81,6 +88,14 @@ where
         self.arc_mtx.clone()
     }
 
+    pub fn read(&self, transaction: &mut Transaction) -> Result<T, usize> {
+        transaction.read(&self)
+    }
+
+    pub fn write(&self, value: T, transaction: &mut Transaction) -> Result<usize, usize> {
+        transaction.write(&self, value)
+    }
+
     pub fn atomic_read(&self) -> ArcAny {
         self.arc_mtx.value.lock().unwrap().clone()
     }
@@ -98,11 +113,15 @@ fn test_tvar() {
     assert_eq!(*tvar.atomic_read().downcast_ref::<i32>().unwrap(), 0);
     let s = tvar.get_mtx_ref().get_space();
     assert_eq!(s.cmp(&Space::new(2)), Ordering::Less);
-    let tvar1 = tvar.clone();
+    let tvar1 = Tvar::new_with_space(0, space.clone());
     spawn(move || {
         tvar1.atomic_write(5);
+        assert_eq!(*tvar1.atomic_read().downcast_ref::<i32>().unwrap(), 5);
     })
     .join()
     .unwrap();
-    assert_eq!(*tvar.atomic_read().downcast_ref::<i32>().unwrap(), 5);
+    let mut spaces = Vec::new();
+    spaces.push(tvar.arc_mtx.get_space().clone());
+    let mut locks = Vec::new();
+    locks.push(spaces[0].version.write().unwrap());
 }

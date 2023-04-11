@@ -1,12 +1,11 @@
-use super::tvar::Tvar;
-use std::any::Any;
 use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
+#[cfg(test)]
 use std::thread::spawn;
 
 #[derive(Clone)]
 pub struct Space {
-    version: Arc<RwLock<usize>>,
+    pub version: Arc<RwLock<usize>>,
     id: usize,
 }
 
@@ -25,6 +24,10 @@ impl Space {
             version: Arc::new(RwLock::new(0)),
             id: 0,
         }
+    }
+
+    pub fn get_id(&self) -> usize {
+        self.id
     }
 
     pub fn read_version(&self) -> usize {

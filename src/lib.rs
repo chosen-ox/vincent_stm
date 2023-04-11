@@ -6,16 +6,17 @@ use std::sync::Arc;
 mod space;
 mod transaction;
 mod tvar;
-pub use space::Space;
-pub use tvar::Tvar;
+
 pub use tvar::Mtx;
-use crate::transaction::Transaction;
+pub use space::Space;
+pub use transaction::Transaction;
+pub use tvar::Tvar;
 
 pub type ArcAny = Arc<dyn Any + Send + Sync>;
 
-fn atomically<F, T>(f: F) -> T
+pub fn atomically<F, T>(f: F) -> T
 where
-    F: Fn(& mut Transaction) -> Result<T, T>,
+    F: Fn(&mut Transaction) -> Result<T, T>,
 {
     Transaction::atomically(f)
 }

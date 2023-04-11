@@ -1,28 +1,56 @@
-use std::any::Any;
-use std::sync::Arc;
-
 use crate::ArcAny;
+use LogVar::*;
 
 #[derive(Clone)]
 pub enum LogVar {
-    Read(ArcAny),
-    Write(ArcAny),
-    ReadWrite(ArcAny, ArcAny),
+    // val, version
+    Read(ArcAny, usize),
+    Write(ArcAny, usize),
+    ReadWrite(ArcAny, ArcAny, usize),
 }
 
 impl LogVar {
-    pub fn write(&mut self, val: ArcAny) {
+
+    // `get_version` is not used currently.
+    // pub fn get_version(&self) -> usize {
+    //     match self {
+    //         Read(_, v) | Write(_, v) | ReadWrite(_, _, v) => *v,
+    //     }
+    // }
+
+    pub fn write(&mut self, val: ArcAny, version: usize) -> Result<usize, usize> {
         *self = match self.clone() {
-            LogVar::Read(r) | LogVar::ReadWrite(r, _)=> LogVar::ReadWrite(r, val),
-            LogVar::Write(_) => LogVar::Write(val),
-        }
+            Read(r, v) | ReadWrite(r, _, v) => {
+                if version != v {
+                    return Err(v);
+                }
+                ReadWrite(r, val, v)
+            }
+            Write(_, v) => {
+                if version != v {
+                    return Err(v);
+                }
+                Write(val, v)
+            }
+        };
+
+        Ok(0)
     }
 
-    pub fn read(&mut self) -> ArcAny {
-        match self {
-            LogVar::Read(r) => r.clone(),
-            LogVar::Write(w) => w.clone(),
-            LogVar::ReadWrite(_, w) => w.clone(),
+    pub fn read(&mut self, version: usize) -> Result<ArcAny, usize> {
+        match &*self {
+            &Read(ref r, v) => {
+                if version != v {
+                    return Err(v);
+                }
+                Ok(r.clone())
+            }
+            &Write(ref w, v) | &ReadWrite(_, ref w, v) => {
+                if version != v {
+                    return Err(v);
+                }
+                Ok(w.clone())
+            }
         }
     }
 }
