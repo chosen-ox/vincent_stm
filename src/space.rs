@@ -77,5 +77,4 @@ fn test_space() {
     })
     .join()
     .unwrap();
-    println!("space version: {}", space.read_version());
 }
