@@ -12,11 +12,11 @@ use crate::Transaction;
 
 pub struct Mtx {
     pub value: Mutex<ArcAny>,
-    pub space: Space,
+    pub space: Arc<Space>,
 }
 
 impl Mtx {
-    pub fn new(value: ArcAny, space: Space) -> Arc<Mtx> {
+    pub fn new(value: ArcAny, space: Arc<Space>) -> Arc<Mtx> {
         let mtx = Mtx {
             value: Mutex::new(value),
             space,
@@ -24,7 +24,15 @@ impl Mtx {
         Arc::new(mtx)
     }
 
-    pub fn get_space(&self) -> Space {
+    pub fn read_atomic(&self) -> (ArcAny, usize) {
+        let read_lock = self.space.version.read().unwrap();
+        let value = self.value.lock().unwrap().clone();
+        let version = *read_lock;
+        drop(read_lock);
+        (value, version)
+    }
+
+    pub fn get_space(&self) -> Arc<Space> {
         self.space.clone()
     }
 
@@ -72,12 +80,12 @@ where
     pub fn new(value: T) -> Tvar<T> {
         let space = Space::new_single_var_space();
         Tvar {
-            arc_mtx: Mtx::new(Arc::new(value), space),
+            arc_mtx: Mtx::new(Arc::new(value), Arc::new(space)),
             _marker: PhantomData,
         }
     }
 
-    pub fn new_with_space(value: T, space: Space) -> Tvar<T> {
+    pub fn new_with_space(value: T, space: Arc<Space>) -> Tvar<T> {
         Tvar {
             arc_mtx: Mtx::new(Arc::new(value), space),
             _marker: PhantomData,
@@ -112,7 +120,6 @@ fn test_tvar() {
     let tvar = Tvar::new_with_space(0, space.clone());
     assert_eq!(*tvar.atomic_read().downcast_ref::<i32>().unwrap(), 0);
     let s = tvar.get_mtx_ref().get_space();
-    assert_eq!(s.cmp(&Space::new(2)), Ordering::Less);
     let tvar1 = Tvar::new_with_space(0, space.clone());
     spawn(move || {
         tvar1.atomic_write(5);

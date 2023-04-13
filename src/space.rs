@@ -1,27 +1,28 @@
+use std::any::Any;
 use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
 #[cfg(test)]
 use std::thread::spawn;
 
-#[derive(Clone)]
 pub struct Space {
-    pub version: Arc<RwLock<usize>>,
+    pub version: RwLock<usize>,
     id: usize,
 }
 
 impl Space {
-    pub fn new(id: usize) -> Space {
+    pub fn new(id: usize) -> Arc<Space> {
         if id == 0 {
             panic!("Space id can not be 0!");
         }
-        Space {
-            version: Arc::new(RwLock::new(0)),
+        let space = Space {
+            version: RwLock::new(0),
             id,
-        }
+        };
+        Arc::new(space)
     }
     pub fn new_single_var_space() -> Space {
         Space {
-            version: Arc::new(RwLock::new(0)),
+            version: RwLock::new(0),
             id: 0,
         }
     }
@@ -70,10 +71,9 @@ fn test_space() {
     let space = Space::new_single_var_space();
     assert_eq!(space.read_version(), 0);
     assert_eq!(space.write_version(0), true);
-    let space1 = space.clone();
     spawn(move || {
-        assert_eq!(space1.write_version(1), true);
-        assert_eq!(space1.write_version(2), true);
+        assert_eq!(space.write_version(1), true);
+        assert_eq!(space.write_version(2), true);
     })
     .join()
     .unwrap();

@@ -147,9 +147,7 @@ impl Transaction {
                 Err(v) => return Err(v),
             },
             Vacant(entry) => {
-                let space = mtx.clone().get_space();
-                let _read_lcok = space.version.read().unwrap();
-                let val = mtx.clone().value.lock().unwrap().clone();
+                let (val, version) = mtx.clone().read_atomic();
                 entry.insert(LogVar::Read(val.clone(), version));
                 val
             }
@@ -216,7 +214,7 @@ mod test_transaction {
             let tvar = tvar.clone();
             threads.push(thread::spawn(move || {
                     atomically(|transaction| {
-                        for _ in 0..1000 {
+                        for _ in 0..100000 {
                             if let Ok(val) = tvar.read(transaction) {
                                 tvar.write(val + 1, transaction)?;
                             }
@@ -230,6 +228,6 @@ mod test_transaction {
             thread.join().unwrap();
         }
         let res = atomically(|transaction| tvar.read(transaction));
-        assert_eq!(res, 10005);
+        assert_eq!(res, 1000005);
     }
 }
