@@ -5,7 +5,7 @@ use std::thread::spawn;
 
 pub struct Space {
     pub version: RwLock<usize>,
-    id: usize,
+    pub id: usize,
 }
 
 impl Space {

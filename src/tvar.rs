@@ -45,19 +45,16 @@ impl Eq for Mtx {}
 
 impl PartialEq for Mtx {
     fn eq(&self, other: &Self) -> bool {
-        // if self.get_space().get_id() == other.get_space().get_id() {
         return self.get_address() == other.get_address();
-        // }
-        // self.get_space().get_id() == other.get_space().get_id()
     }
 }
 
 impl Ord for Mtx {
     fn cmp(&self, other: &Self) -> Ordering {
-        if self.get_space().get_id() == other.get_space().get_id() {
+        if Arc::ptr_eq(&self.space, &other.space) {
             return self.get_address().cmp(&other.get_address());
         }
-        self.get_space().get_id().cmp(&other.get_space().get_id())
+        self.space.id.cmp(&other.space.id)
     }
 }
 

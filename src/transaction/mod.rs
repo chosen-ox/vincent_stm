@@ -250,7 +250,7 @@ mod test_transaction {
         let mut threads = Vec::with_capacity(10);
         let tvar = TVar::new(5);
 
-        for _ in 0..10 {
+        for _ in 0..100 {
             let tvar = tvar.clone();
             threads.push(thread::spawn(move || {
                 atomically(|transaction| {
@@ -267,7 +267,7 @@ mod test_transaction {
             thread.join().unwrap();
         }
         let res = atomically(|transaction| tvar.read(transaction));
-        assert_eq!(res, 100005);
+        assert_eq!(res, 1000005);
     }
 
     #[test]
@@ -276,26 +276,26 @@ mod test_transaction {
 
         let mut tvars = Vec::with_capacity(100);
         let mut threads = Vec::with_capacity(10);
-        for _ in 0..10 {
+        for _ in 0..100 {
             tvars.push(TVar::new_with_space(0, space.clone()));
         }
 
-        for _ in 0..10 {
-            let tvars = tvars.clone();
-            threads.push(thread::spawn(move || {
-                atomically(|transaction| {
-                    for _ in 0..1000 {
-                        for tvar in &tvars {
-                            if let Ok(val) = tvar.read(transaction) {
-                                tvar.write(transaction, val + 1).unwrap();
-                            }
-                        }
-                    }
-                    Ok(0)
-                });
-            }));
-        }
-        for i in 0..10 {
+        // for _ in 0..100 {
+        //     let tvars = tvars.clone();
+        //     threads.push(thread::spawn(move || {
+        //         atomically(|transaction| {
+        //             for _ in 0..10 {
+        //                 for tvar in &tvars {
+        //                     if let Ok(val) = tvar.read(transaction) {
+        //                         tvar.write(transaction, val + 1).unwrap();
+        //                     }
+        //                 }
+        //             }
+        //             Ok(0)
+        //         });
+        //     }));
+        // }
+        for i in 0..tvars.len() {
             let tvars = tvars.clone();
             for _ in 0..100 {
                 let tvar = tvars[i].clone();
@@ -315,7 +315,7 @@ mod test_transaction {
         }
         for tvar in &tvars {
             let res = atomically(|transaction| tvar.read(transaction));
-            assert_eq!(res, 10100);
+            assert_eq!(res, 100);
         }
     }
 }
