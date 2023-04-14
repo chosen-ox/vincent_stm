@@ -45,16 +45,16 @@ impl Eq for Mtx {}
 
 impl PartialEq for Mtx {
     fn eq(&self, other: &Self) -> bool {
-        if self.get_space().get_id() + other.get_space().get_id() == 0 {
-            return self.get_address() == other.get_address();
-        }
-        self.get_space().get_id() == other.get_space().get_id()
+        // if self.get_space().get_id() == other.get_space().get_id() {
+        return self.get_address() == other.get_address();
+        // }
+        // self.get_space().get_id() == other.get_space().get_id()
     }
 }
 
 impl Ord for Mtx {
     fn cmp(&self, other: &Self) -> Ordering {
-        if self.get_space().get_id() + other.get_space().get_id() == 0 {
+        if self.get_space().get_id() == other.get_space().get_id() {
             return self.get_address().cmp(&other.get_address());
         }
         self.get_space().get_id().cmp(&other.get_space().get_id())
@@ -68,25 +68,25 @@ impl PartialOrd for Mtx {
 }
 
 #[derive(Clone)]
-pub struct Tvar<T> {
+pub struct TVar<T> {
     arc_mtx: Arc<Mtx>,
     _marker: PhantomData<T>,
 }
 
-impl<T> Tvar<T>
+impl<T> TVar<T>
 where
     T: Any + Send + Sync + Clone,
 {
-    pub fn new(value: T) -> Tvar<T> {
+    pub fn new(value: T) -> TVar<T> {
         let space = Space::new_single_var_space();
-        Tvar {
+        TVar {
             arc_mtx: Mtx::new(Arc::new(value), Arc::new(space)),
             _marker: PhantomData,
         }
     }
 
-    pub fn new_with_space(value: T, space: Arc<Space>) -> Tvar<T> {
-        Tvar {
+    pub fn new_with_space(value: T, space: Arc<Space>) -> TVar<T> {
+        TVar {
             arc_mtx: Mtx::new(Arc::new(value), space),
             _marker: PhantomData,
         }
@@ -100,7 +100,7 @@ where
         transaction.read(&self)
     }
 
-    pub fn write(&self, value: T, transaction: &mut Transaction) -> Result<usize, usize> {
+    pub fn write(&self, transaction: &mut Transaction, value: T) -> Result<usize, usize> {
         transaction.write(&self, value)
     }
 
@@ -117,10 +117,9 @@ where
 #[test]
 fn test_tvar() {
     let space = Space::new(1);
-    let tvar = Tvar::new_with_space(0, space.clone());
+    let tvar = TVar::new_with_space(0, space.clone());
     assert_eq!(*tvar.atomic_read().downcast_ref::<i32>().unwrap(), 0);
-    let s = tvar.get_mtx_ref().get_space();
-    let tvar1 = Tvar::new_with_space(0, space.clone());
+    let tvar1 = TVar::new_with_space(0, space.clone());
     spawn(move || {
         tvar1.atomic_write(5);
         assert_eq!(*tvar1.atomic_read().downcast_ref::<i32>().unwrap(), 5);

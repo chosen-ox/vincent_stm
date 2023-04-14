@@ -7,10 +7,10 @@ mod space;
 mod transaction;
 mod tvar;
 
-pub use tvar::Mtx;
 pub use space::Space;
 pub use transaction::Transaction;
-pub use tvar::Tvar;
+pub use tvar::Mtx;
+pub use tvar::TVar;
 
 pub type ArcAny = Arc<dyn Any + Send + Sync>;
 
