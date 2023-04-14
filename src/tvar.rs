@@ -1,7 +1,8 @@
 use std::any::Any;
+use std::cell::UnsafeCell;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[cfg(test)]
 use std::thread::spawn;
@@ -10,23 +11,25 @@ use crate::space::Space;
 use crate::ArcAny;
 use crate::Transaction;
 
+
 pub struct Mtx {
-    pub value: Mutex<ArcAny>,
+    pub value: UnsafeCell<ArcAny>,
     pub space: Arc<Space>,
 }
+unsafe impl Sync for Mtx {}
 
 impl Mtx {
     pub fn new(value: ArcAny, space: Arc<Space>) -> Arc<Mtx> {
         let mtx = Mtx {
-            value: Mutex::new(value),
+            value: UnsafeCell::new(value),
             space,
         };
         Arc::new(mtx)
     }
 
-    pub fn read_atomic(&self) -> (ArcAny, usize) {
+    pub unsafe fn read_atomic(&self) -> (ArcAny, usize) {
         let read_lock = self.space.version.read().unwrap();
-        let value = self.value.lock().unwrap().clone();
+        let value = (*self.value.get()).clone();
         let version = *read_lock;
         drop(read_lock);
         (value, version)
@@ -101,12 +104,12 @@ where
         transaction.write(&self, value)
     }
 
-    pub fn atomic_read(&self) -> ArcAny {
-        self.arc_mtx.value.lock().unwrap().clone()
+    pub unsafe fn atomic_read(&self) -> ArcAny {
+        (*self.arc_mtx.value.get()).clone()
     }
 
-    pub fn atomic_write(&self, value: T) {
-        *self.arc_mtx.value.lock().unwrap() = Arc::new(value);
+    pub unsafe fn atomic_write(&self, value: T) {
+        *self.arc_mtx.value.get() = Arc::new(value);
     }
 }
 
@@ -115,9 +118,11 @@ where
 fn test_tvar() {
     let space = Space::new(1);
     let tvar = TVar::new_with_space(0, space.clone());
-    assert_eq!(*tvar.atomic_read().downcast_ref::<i32>().unwrap(), 0);
+    unsafe {
+        assert_eq!(*tvar.atomic_read().downcast_ref::<i32>().unwrap(), 0);
+    }
     let tvar1 = TVar::new_with_space(0, space.clone());
-    spawn(move || {
+    spawn(move || unsafe {
         tvar1.atomic_write(5);
         assert_eq!(*tvar1.atomic_read().downcast_ref::<i32>().unwrap(), 5);
     })
