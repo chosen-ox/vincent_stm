@@ -60,7 +60,7 @@ impl Ord for Mtx {
         if Arc::ptr_eq(&self.space, &other.space) {
             return self.get_address().cmp(&other.get_address());
         }
-        self.space.id.cmp(&other.space.id)
+        self.space.get_address().cmp(&other.space.get_address())
     }
 }
 

@@ -18,19 +18,17 @@ impl LogVar {
     //     }
     // }
 
-    pub fn write(&mut self, val: ArcAny) -> Result<usize, usize> {
+    pub fn write(&mut self, val: ArcAny) {
         *self = match self.clone() {
             Read(r, v) | ReadWrite(r, _, v) => ReadWrite(r, val, v),
             Write(_) => Write(val),
         };
-
-        Ok(0)
     }
 
-    pub fn read(&self) -> Result<ArcAny, usize> {
+    pub fn read(&self) -> ArcAny {
         match &*self {
-            &Read(ref r, _) => Ok(r.clone()),
-            &Write(ref w) | &ReadWrite(_, ref w, _) => Ok(w.clone()),
+            &Read(ref r, _) => r.clone(),
+            &Write(ref w) | &ReadWrite(_, ref w, _) => w.clone(),
         }
     }
 }

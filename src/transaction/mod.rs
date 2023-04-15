@@ -48,7 +48,7 @@ impl Transaction {
         let mut current_version = Arc::new(0);
         for (mtx, var) in &self.vars {
             let space = mtx.get_space();
-            let id = space.get_id();
+            let id = space.id;
             if id == 0 {
                 match var {
                     Read(_, v) => {
@@ -90,7 +90,7 @@ impl Transaction {
                     ReadWrite(_, _, v) => {
                         let version = space.read_version();
                         if !Arc::ptr_eq(v, &version) {
-                            // println!("retry len {}", self.vars.len());
+                            println!("retry len {}", self.vars.len());
                             return false;
                         }
                         is_write.push(1);
@@ -137,42 +137,45 @@ impl Transaction {
         let mut read_vec = Vec::with_capacity(spaces.len());
 
         // trick to pass the borrow checker
-        {
-            for (i, space) in spaces.iter().enumerate() {
-                if is_write[i] == 2 {
+        for (i, space) in spaces.iter().enumerate() {
+            if is_write[i] == 2 {
+                // write only
+                println!("len {}", self.vars.len());
+                let lock = space.version.write().unwrap();
+                write_vec.push(lock);
+            } else if is_write[i] == 1 {
+                // read and write
+                println!("len {}", self.vars.len());
+                let lock = space.version.write().unwrap();
+                if !Arc::ptr_eq(&lock, &versions[i]) {
+                    // println!("retry1");
                     // println!("len {}", self.vars.len());
-                    let lock = space.version.write().unwrap();
-                    write_vec.push(lock);
-                } else if is_write[i] == 1 {
-                    // println!("len {}", self.vars.len());
-                    let lock = space.version.write().unwrap();
-                    if !Arc::ptr_eq(&lock, &versions[i]) {
-                        // println!("retry1");
-                        // println!("len {}", self.vars.len());
-                        return false;
-                    }
-                    write_vec.push(lock);
-                } else {
-                    let lock = space.version.read().unwrap();
-                    if !Arc::ptr_eq(&lock, &versions[i]) {
-                        return false;
-                    }
-                    read_vec.push(lock);
+                    return false;
                 }
-            }
-
-            for (mtx, var) in &self.vars {
-                match var {
-                    Write(val) | ReadWrite(_, val, _) => unsafe {
-                        *mtx.value.get() = val.clone();
-                    },
-                    _ => {}
+                write_vec.push(lock);
+            } else {
+                // read only
+                let lock = space.version.read().unwrap();
+                if !Arc::ptr_eq(&lock, &versions[i]) {
+                    return false;
                 }
+                read_vec.push(lock);
             }
+        }
 
-            for mut lock in write_vec {
-                *lock = Arc::new(0);
+        drop(read_vec);
+
+        for (mtx, var) in &self.vars {
+            match var {
+                Write(val) | ReadWrite(_, val, _) => unsafe {
+                    *mtx.value.get() = val.clone();
+                },
+                _ => {}
             }
+        }
+
+        for mut lock in write_vec {
+            *lock = Arc::new(0);
         }
 
         true
@@ -182,10 +185,7 @@ impl Transaction {
         let mtx = var.get_mtx_ref();
         // let version = mtx.get_space().read_version();
         let val = match self.vars.entry(mtx.clone()) {
-            Occupied(entry) => match entry.get().read() {
-                Ok(val) => val,
-                Err(v) => return Err(v),
-            },
+            Occupied(entry) => entry.get().read(),
             Vacant(entry) => unsafe {
                 let (val, version) = mtx.read_atomic();
                 entry.insert(LogVar::Read(val.clone(), version));
@@ -201,19 +201,15 @@ impl Transaction {
         val: T,
     ) -> Result<usize, usize> {
         let mtx = var.get_mtx_ref();
-        // let version = mtx.space.read_version();
         let val = Arc::new(val);
         match self.vars.entry(mtx) {
             Occupied(mut entry) => {
-                if let Err(v) = entry.get_mut().write(val) {
-                    return Err(v);
-                }
+                entry.get_mut().write(val);
             }
             Vacant(entry) => {
                 entry.insert(LogVar::Write(val));
             }
         }
-        // Ok(version)
         Ok(0)
     }
 
@@ -295,33 +291,33 @@ mod test_transaction {
 
     #[test]
     fn test_multi_variables() {
-        for _ in 0..10 {
-        let space = Space::new(1);
+        // for _ in 0..10 {
+            let space = Space::new(1);
 
-        let mut tvars = Vec::with_capacity(100);
-        let mut threads = Vec::with_capacity(10);
-        for _ in 0..100 {
-            tvars.push(TVar::new_with_space(0, space.clone()));
-        }
-
-        let tvars_cpy = tvars.clone();
-        threads.push(thread::spawn(move || {
-            for i in 0..100 {
-                atomically(|transaction| {
-                    for _ in 0..10000 {
-                        // let tvar = tvars_cpy[50].read(transaction);
-                        tvars_cpy[50].write(transaction, i)?;
-                    }
-                    Ok(0)
-                });
-                sleep(std::time::Duration::from_millis(50));
+            let mut tvars = Vec::with_capacity(100);
+            let mut threads = Vec::with_capacity(10);
+            for _ in 0..100 {
+                tvars.push(TVar::new_with_space(0, space.clone()));
             }
-        }));
 
-        for _ in 0..10 {
+            let tvars_cpy = tvars.clone();
+            threads.push(thread::spawn(move || {
+                for i in 0..200 {
+                    atomically(|transaction| {
+                        for _ in 0..10 {
+                            // let tvar = tvars_cpy[50].read(transaction);
+                            tvars_cpy[99].write(transaction, i)?;
+                        }
+                        Ok(0)
+                    });
+                    sleep(std::time::Duration::from_millis(50));
+                }
+            }));
+
+            // for _ in 0..10 {
             let tvars = tvars.clone();
             threads.push(thread::spawn(move || {
-                for _ in 0..10 {
+                for _ in 0..100 {
                     atomically(|transaction| {
                         for _ in 0..100 {
                             for tvar in &tvars {
@@ -336,30 +332,30 @@ mod test_transaction {
                 }
             }));
             //360
-            sleep(std::time::Duration::from_millis(360));
-        }
-        // let tvars = tvars.clone();
-        // threads.push(thread::spawn(move || {
-        //     for i in 0..500 {
-        //         atomically(|transaction| {
-        //             for _ in 0..10000 {
-        //                 let tvar = tvars[50].read(transaction);
-        //                 tvars[50].write(transaction, i)?;
-        //             }
-        //             Ok(0)
-        //         });
-        //         sleep(std::time::Duration::from_millis(50));
-        //     }
-        // }));
+            // sleep(std::time::Duration::from_millis(360));
+            // }
+            // let tvars = tvars.clone();
+            // threads.push(thread::spawn(move || {
+            //     for i in 0..500 {
+            //         atomically(|transaction| {
+            //             for _ in 0..10000 {
+            //                 let tvar = tvars[50].read(transaction);
+            //                 tvars[50].write(transaction, i)?;
+            //             }
+            //             Ok(0)
+            //         });
+            //         sleep(std::time::Duration::from_millis(50));
+            //     }
+            // }));
 
-        for thread in threads {
-            thread.join().unwrap();
-        }
-        // for tvar in &tvars {
-        //     let res = atomically(|transaction| tvar.read(transaction));
-        //360
-        //     assert_eq!(res, 1100);
+            for thread in threads {
+                thread.join().unwrap();
+            }
+            // for tvar in &tvars {
+            //     let res = atomically(|transaction| tvar.read(transaction));
+            //360
+            //     assert_eq!(res, 1100);
+            // }
         // }
-        }
     }
 }
