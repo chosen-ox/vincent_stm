@@ -11,7 +11,6 @@ use crate::space::Space;
 use crate::ArcAny;
 use crate::Transaction;
 
-
 pub struct Mtx {
     pub value: UnsafeCell<ArcAny>,
     pub space: Arc<Space>,
@@ -27,10 +26,14 @@ impl Mtx {
         Arc::new(mtx)
     }
 
-    pub unsafe fn read_atomic(&self) -> (ArcAny, usize) {
+    pub fn read_version(&self) -> Arc<u8> {
+        self.space.version.read().unwrap().clone()
+    }
+
+    pub unsafe fn read_atomic(&self) -> (ArcAny, Arc<u8>) {
         let read_lock = self.space.version.read().unwrap();
         let value = (*self.value.get()).clone();
-        let version = *read_lock;
+        let version = Arc::clone(&read_lock);
         drop(read_lock);
         (value, version)
     }

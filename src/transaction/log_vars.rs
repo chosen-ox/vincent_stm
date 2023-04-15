@@ -1,12 +1,13 @@
 use crate::ArcAny;
+use std::sync::Arc;
 use LogVar::*;
 
 #[derive(Clone)]
 pub enum LogVar {
     // val, version
-    Read(ArcAny, usize),
+    Read(ArcAny, Arc<u8>),
     Write(ArcAny),
-    ReadWrite(ArcAny, ArcAny, usize),
+    ReadWrite(ArcAny, ArcAny, Arc<u8>),
 }
 
 impl LogVar {

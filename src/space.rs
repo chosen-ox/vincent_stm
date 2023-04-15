@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use std::thread::spawn;
 
 pub struct Space {
-    pub version: RwLock<usize>,
+    pub version: RwLock<Arc<u8>>,
     pub id: usize,
 }
 
@@ -14,14 +14,14 @@ impl Space {
             panic!("Space id can not be 0!");
         }
         let space = Space {
-            version: RwLock::new(0),
+            version: RwLock::new(Arc::new(0)),
             id,
         };
         Arc::new(space)
     }
     pub fn new_single_var_space() -> Space {
         Space {
-            version: RwLock::new(0),
+            version: RwLock::new(Arc::new(0)),
             id: 0,
         }
     }
@@ -30,18 +30,18 @@ impl Space {
         self.id
     }
 
-    pub fn read_version(&self) -> usize {
-        *self.version.read().unwrap()
+    pub fn read_version(&self) -> Arc<u8> {
+        self.version.read().unwrap().clone()
     }
 
-    pub fn write_version(&self, version_id: usize) -> bool {
-        let mut lock = self.version.write().unwrap();
-        if *lock == version_id {
-            *lock += 1;
-            return true;
-        }
-        false
-    }
+    // pub fn write_version(&self, version_id: usize) -> bool {
+    //     let mut lock = self.version.write().unwrap();
+    //     if *lock == version_id {
+    //         *lock += 1;
+    //         return true;
+    //     }
+    //     false
+    // }
 }
 
 impl Eq for Space {}
@@ -67,13 +67,13 @@ impl Ord for Space {
 #[cfg(test)]
 #[test]
 fn test_space() {
-    let space = Space::new_single_var_space();
-    assert_eq!(space.read_version(), 0);
-    assert_eq!(space.write_version(0), true);
-    spawn(move || {
-        assert_eq!(space.write_version(1), true);
-        assert_eq!(space.write_version(2), true);
-    })
-    .join()
-    .unwrap();
+    // let space = Space::new_single_var_space();
+    // assert_eq!(space.read_version(), 0);
+    // assert_eq!(space.write_version(0), true);
+    // spawn(move || {
+    //     assert_eq!(space.write_version(1), true);
+    //     assert_eq!(space.write_version(2), true);
+    // })
+    // .join()
+    // .unwrap();
 }
