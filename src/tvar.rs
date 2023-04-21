@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::cell::UnsafeCell;
 use std::cmp::Ordering;
+use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -99,6 +100,7 @@ where
         self.arc_mtx.clone()
     }
 
+
     pub fn read(&self, transaction: &mut Transaction) -> Result<T, usize> {
         transaction.read(&self)
     }
@@ -113,6 +115,25 @@ where
 
     pub unsafe fn atomic_write(&self, value: T) {
         *self.arc_mtx.value.get() = Arc::new(value);
+    }
+}
+
+impl<T> TVar<T>
+where
+    T: Any + Send + Sync + Clone + Display,
+{
+    pub fn display_value(&self, transaction: &mut Transaction, msg: &str) {
+        transaction.display_value(&self, msg);
+    }
+}
+
+
+impl<T> TVar<T>
+    where
+        T: Any + Send + Sync + Clone + Debug,
+{
+    pub fn debug_value(&self, transaction: &mut Transaction, msg: &str) {
+        transaction.debug_value(&self, msg);
     }
 }
 

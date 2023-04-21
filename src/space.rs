@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
 
 pub struct Space {
@@ -35,3 +34,4 @@ impl Space {
     pub fn get_address(&self) -> usize {
         self as *const Space as usize
     }
+}

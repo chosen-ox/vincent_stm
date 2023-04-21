@@ -3,6 +3,7 @@ pub mod log_vars;
 use std::any::Any;
 use std::collections::btree_map::Entry::{Occupied, Vacant};
 use std::collections::BTreeMap;
+use std::fmt::{Debug, Display};
 use std::sync::Arc;
 
 use self::log_vars::LogVar;
@@ -11,18 +12,20 @@ use crate::{Mtx, TVar};
 
 pub struct Transaction {
     vars: BTreeMap<Arc<Mtx>, LogVar>,
+    msg_log: Vec<String>,
 }
 
 impl Transaction {
     pub fn new() -> Transaction {
         Transaction {
             vars: BTreeMap::new(),
+            msg_log: Vec::new(),
         }
     }
 
     pub fn atomically<F, T>(f: F) -> T
     where
-        F: Fn(&mut Transaction) -> Result<T, T>,
+        F: Fn(&mut Transaction) -> Result<T, usize>,
     {
         let mut transaction = Transaction::new();
         loop {
@@ -90,7 +93,7 @@ impl Transaction {
                     ReadWrite(_, _, v) => {
                         let version = space.read_version();
                         if !Arc::ptr_eq(v, &version) {
-                            println!("retry len {}", self.vars.len());
+                            // println!("retry len {}", self.vars.len());
                             return false;
                         }
                         is_write.push(1);
@@ -140,12 +143,12 @@ impl Transaction {
         for (i, space) in spaces.iter().enumerate() {
             if is_write[i] == 2 {
                 // write only
-                println!("len {}", self.vars.len());
+                // println!("len {}", self.vars.len());
                 let lock = space.version.write().unwrap();
                 write_vec.push(lock);
             } else if is_write[i] == 1 {
                 // read and write
-                println!("len {}", self.vars.len());
+                // println!("len {}", self.vars.len());
                 let lock = space.version.write().unwrap();
                 if !Arc::ptr_eq(&lock, &versions[i]) {
                     // println!("retry1");
@@ -172,6 +175,10 @@ impl Transaction {
                 },
                 _ => {}
             }
+        }
+
+        for msg in &self.msg_log {
+            println!("{}", msg);
         }
 
         for mut lock in write_vec {
@@ -213,7 +220,20 @@ impl Transaction {
         Ok(0)
     }
 
-    fn downcast<T: Any + Clone>(var: Arc<dyn Any>) -> T {
+    pub fn display_value<T: Any + Send + Sync + Clone + Display>(&mut self, var: &TVar<T>, msg: &str) {
+        let msg = format!("{} {}", msg, self.read(var).unwrap());
+        self.msg_log.push(msg);
+
+    }
+
+
+    pub fn debug_value<T: Any + Send + Sync + Clone + Debug>(&mut self, var: &TVar<T>, msg: &str) {
+        let msg = format!("{:?} {:?}", msg, self.read(var).unwrap());
+        self.msg_log.push(msg);
+    }
+
+
+        fn downcast<T: Any + Clone>(var: Arc<dyn Any>) -> T {
         match var.downcast_ref::<T>() {
             Some(s) => s.clone(),
             None => unreachable!("TVar has wrong type"),
@@ -229,25 +249,30 @@ mod test_transaction {
     use crate::TVar;
     use crate::{atomically, Space};
     use std::thread;
+    #[allow(unused_imports)]
     use std::thread::sleep;
 
     #[test]
     fn test_multi_space() {
         let space1 = Space::new(1);
         let space2 = Space::new(2);
-        let tvar0 = TVar::new(5);
+        let tvar0 = TVar::new(vec![1, 2, 3]);
         let tvar1 = TVar::new_with_space(5, space1.clone());
         let tvar2 = TVar::new_with_space(5, space2.clone());
         atomically(|transaction| {
-            tvar0.write(transaction, 10)?;
+            tvar0.debug_value(transaction, "tvar0");
+            // tvar0.write(transaction, 10)?;
+            // tvar0.debug_value(transaction, "tvar0");
             tvar1.write(transaction, 10)?;
+            tvar1.debug_value(transaction, "tvar1");
             tvar2.write(transaction, 10)?;
+            tvar2.debug_value(transaction, "tvar2");
             Ok(1)
         });
         let res0 = atomically(|transaction| tvar0.read(transaction));
         let res1 = atomically(|transaction| tvar1.read(transaction));
         let res2 = atomically(|transaction| tvar2.read(transaction));
-        assert_eq!(res0, 10);
+        assert_eq!(res0, vec![1, 2, 3]);
         assert_eq!(res1, 10);
         assert_eq!(res2, 10);
     }
@@ -291,7 +316,7 @@ mod test_transaction {
 
     #[test]
     fn test_multi_variables() {
-        // for _ in 0..10 {
+        for _ in 0..100 {
             let space = Space::new(1);
 
             let mut tvars = Vec::with_capacity(100);
@@ -302,34 +327,31 @@ mod test_transaction {
 
             let tvars_cpy = tvars.clone();
             threads.push(thread::spawn(move || {
-                for i in 0..200 {
+                for i in 0..100 {
                     atomically(|transaction| {
                         for _ in 0..10 {
-                            // let tvar = tvars_cpy[50].read(transaction);
+                            let _tvar = tvars_cpy[50].read(transaction);
                             tvars_cpy[99].write(transaction, i)?;
                         }
                         Ok(0)
                     });
-                    sleep(std::time::Duration::from_millis(50));
                 }
             }));
 
             // for _ in 0..10 {
             let tvars = tvars.clone();
             threads.push(thread::spawn(move || {
-                for _ in 0..100 {
-                    atomically(|transaction| {
-                        for _ in 0..100 {
-                            for tvar in &tvars {
-                                if let Ok(val) = tvar.read(transaction) {
-                                    tvar.write(transaction, val + 1).unwrap();
-                                }
+                atomically(|transaction| {
+                    for _ in 0..50 {
+                        for tvar in &tvars {
+                            if let Ok(val) = tvar.read(transaction) {
+                                tvar.write(transaction, val + 1).unwrap();
                             }
                         }
-                        // simulate some work
-                        Ok(0)
-                    });
-                }
+                    }
+                    // simulate some work
+                    Ok(0)
+                });
             }));
             //360
             // sleep(std::time::Duration::from_millis(360));
@@ -356,6 +378,6 @@ mod test_transaction {
             //360
             //     assert_eq!(res, 1100);
             // }
-        // }
+        }
     }
 }
