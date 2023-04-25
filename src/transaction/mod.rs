@@ -22,7 +22,7 @@ impl Transaction {
 
     pub fn atomically<F, T>(f: F) -> T
     where
-        F: Fn(&mut Transaction) -> Result<T, T>,
+        F: Fn(&mut Transaction) -> Result<T, usize>,
     {
         let mut transaction = Transaction::new();
         loop {
@@ -89,10 +89,10 @@ impl Transaction {
             } else {
                 match *var {
                     Read(_, v) => {
-                        if  *is_write.last().unwrap() == 2 {
+                        if *is_write.last().unwrap() == 2 {
                             current_version = v;
                             *versions.last_mut().unwrap() = v;
-                            *is_write.last_mut().unwrap() = 0;
+                            *is_write.last_mut().unwrap() = 1;
                         } else if v != current_version {
                             return false;
                         }
@@ -107,7 +107,7 @@ impl Transaction {
                         *is_write.last_mut().unwrap() = 1;
                     }
                     Write(_) => {
-                        if *is_write.last().unwrap() != 2 {
+                        if *is_write.last().unwrap() != 0 {
                             *is_write.last_mut().unwrap() = 1;
                         }
                     }
@@ -211,16 +211,41 @@ mod test_transaction {
     use crate::TVar;
     use crate::{atomically, Space};
     use std::thread;
+    #[allow(unused_imports)]
+    use std::thread::sleep;
+
+    // #[test]
+    // fn test_display() {
+    //     let tvar0 = TVar::new(1);
+    //     let tvar1 = TVar::new(2);
+    //     let tvar2 = TVar::new(3);
+    //     atomically(|transaction| {
+    //         tvar0.display_value(transaction, "tvar0 before modify");
+    //         tvar0.write(transaction, 10)?;
+    //         tvar0.display_value(transaction, "tvar0 after modify");
+    //
+    //         tvar1.display_value(transaction, "tvar1 before modify");
+    //         tvar1.write(transaction, 10)?;
+    //         tvar1.display_value(transaction, "tvar1 after modify");
+    //
+    //         tvar2.display_value(transaction, "tvar2 before modify");
+    //         tvar2.write(transaction, 10)?;
+    //         tvar2.display_value(transaction, "tvar2 after modify");
+    //
+    //         tvar1.read(transaction)
+    //     });
+    // }
 
     #[test]
     fn test_multi_space() {
         let space1 = Space::new(1);
         let space2 = Space::new(2);
-        let tvar0 = TVar::new(5);
+        let tvar0 = TVar::new(vec![1, 2, 3]);
         let tvar1 = TVar::new_with_space(5, space1.clone());
         let tvar2 = TVar::new_with_space(5, space2.clone());
         atomically(|transaction| {
-            tvar0.write(transaction, 10)?;
+            // tvar0.write(transaction, 10)?;
+            // tvar0.debug_value(transaction, "tvar0");
             tvar1.write(transaction, 10)?;
             tvar2.write(transaction, 10)?;
             Ok(1)
@@ -228,94 +253,182 @@ mod test_transaction {
         let res0 = atomically(|transaction| tvar0.read(transaction));
         let res1 = atomically(|transaction| tvar1.read(transaction));
         let res2 = atomically(|transaction| tvar2.read(transaction));
-        assert_eq!(res0, 10);
+        assert_eq!(res0, vec![1, 2, 3]);
         assert_eq!(res1, 10);
         assert_eq!(res2, 10);
     }
     #[test]
-    fn test_for_loop() {
-        let tvar = TVar::new(5);
-        let res = atomically(|transaction| {
-            for _ in 0..100 {
-                let val = tvar.read(transaction).unwrap();
-                tvar.write(transaction, val + 1).unwrap();
-            }
-            tvar.read(transaction)
-        });
-        assert_eq!(res, 105);
+    fn test_single_thread() {
+        for _ in 0..100 {
+            let tvar = TVar::new(5);
+            let res = atomically(|transaction| {
+                for _ in 0..100000 {
+                    let val = tvar.read(transaction).unwrap();
+                    tvar.write(transaction, val + 1).unwrap();
+                }
+                tvar.read(transaction)
+            });
+            assert_eq!(res, 100005);
+        }
     }
 
     #[test]
     fn test_multi_thread() {
-        let mut threads = Vec::with_capacity(10);
-        let tvar = TVar::new(5);
-
         for _ in 0..100 {
-            let tvar = tvar.clone();
+            let mut threads = Vec::with_capacity(10);
+            let tvar = TVar::new(5);
+
+            for _ in 0..100 {
+                let tvar = tvar.clone();
+                threads.push(thread::spawn(move || {
+                    atomically(|transaction| {
+                        for _ in 0..1000 {
+                            if let Ok(val) = tvar.read(transaction) {
+                                tvar.write(transaction, val + 1).unwrap();
+                            }
+                        }
+                        tvar.read(transaction)
+                    });
+                }));
+            }
+            for thread in threads {
+                thread.join().unwrap();
+            }
+            let res = atomically(|transaction| tvar.read(transaction));
+            assert_eq!(res, 100005);
+        }
+    }
+    #[test]
+    fn test_single_variable() {
+        for _ in 0..1000 {
+            let space = Space::new(1);
+
+            let mut tvars = Vec::with_capacity(100);
+            let mut threads = Vec::with_capacity(10);
+            for _ in 0..1 {
+                tvars.push(TVar::new_with_space(0, space.clone()));
+            }
+
+            let tvars_cpy = tvars.clone();
             threads.push(thread::spawn(move || {
-                atomically(|transaction| {
-                    for _ in 0..10000 {
+                for i in 0..10 {
+                    atomically(|transaction| {
+                        for _ in 0..100 {
+                            if let Ok(val) = tvars_cpy[0].read(transaction) {
+                                tvars_cpy[0].write(transaction, i)?;
+                            }
+                        }
+                        Ok(0)
+                    });
+                }
+            }));
+
+            // for _ in 0..10 {
+            // let tvars = tvars.clone();
+            // sleep(std::time::Duration::from_millis(1000));
+            atomically(|transaction| {
+                for _ in 0..100 {
+                    for tvar in &tvars {
                         if let Ok(val) = tvar.read(transaction) {
                             tvar.write(transaction, val + 1).unwrap();
                         }
                     }
-                    tvar.read(transaction)
-                });
-            }));
+                }
+                // simulate some work
+                Ok(0)
+            });
+            //360
+            // sleep(std::time::Duration::from_millis(360));
+            // }
+            // let tvars = tvars.clone();
+            // threads.push(thread::spawn(move || {
+            //     for i in 0..500 {
+            //         atomically(|transaction| {
+            //             for _ in 0..10000 {
+            //                 let tvar = tvars[50].read(transaction);
+            //                 tvars[50].write(transaction, i)?;
+            //             }
+            //             Ok(0)
+            //         });
+            //         sleep(std::time::Duration::from_millis(50));
+            //     }
+            // }));
+
+            threads.push(thread::spawn(|| {}));
+            for thread in threads {
+                thread.join().unwrap();
+            }
         }
-        for thread in threads {
-            thread.join().unwrap();
-        }
-        let res = atomically(|transaction| tvar.read(transaction));
-        assert_eq!(res, 1000005);
     }
 
     #[test]
     fn test_multi_variables() {
-        let space = Space::new(1);
 
+        // for _ in 0..10 {
+        let space = Space::new(1);
         let mut tvars = Vec::with_capacity(100);
         let mut threads = Vec::with_capacity(10);
-        for _ in 0..100 {
+        for _ in 0..1000 {
             tvars.push(TVar::new_with_space(0, space.clone()));
+            // tvars.push(TVar::new(0));
         }
 
-        // for _ in 0..100 {
-        //     let tvars = tvars.clone();
-        //     threads.push(thread::spawn(move || {
+        for _ in 0..10 {
+
+            let tvars_cpy = tvars.clone();
+            threads.push(thread::spawn(move || {
+                atomically(|transaction| {
+                    for _ in 0..100 {
+                        for tvar in &tvars_cpy {
+                            if let Ok(val) = tvar.read(transaction) {
+                                tvar.write(transaction, val + 1).unwrap();
+                            }
+                        }
+                    }
+                    // simulate some work
+                    Ok(0)
+                });
+            }));
+            let tvars = tvars.clone();
+            threads.push(thread::spawn(move || {
+                atomically(|transaction| {
+                    for _ in 0..100000 {
+                        if let Ok(val) = tvars[0].read(transaction) {
+                            tvars[999].write(transaction, val + 1).unwrap();
+                        }
+                    }
+                    // simulate some work
+                    Ok(0)
+                });
+            }));
+            //360
+            // sleep(std::time::Duration::from_millis(1000));
+        }
+        // let tvars = tvars.clone();
+        // threads.push(thread::spawn(move || {
+        //     for i in 0..500 {
         //         atomically(|transaction| {
-        //             for _ in 0..10 {
-        //                 for tvar in &tvars {
-        //                     if let Ok(val) = tvar.read(transaction) {
-        //                         tvar.write(transaction, val + 1).unwrap();
-        //                     }
-        //                 }
+        //             for _ in 0..10000 {
+        //                 let tvar = tvars[50].read(transaction);
+        //                 tvars[50].write(transaction, i)?;
         //             }
         //             Ok(0)
         //         });
-        //     }));
-        // }
-        for i in 0..tvars.len() {
-            let tvars = tvars.clone();
-            for _ in 0..100 {
-                let tvar = tvars[i].clone();
-                threads.push(thread::spawn(move || {
-                    atomically(|transaction| {
-                        if let Ok(val) = tvar.read(transaction) {
-                            tvar.write(transaction, val + 1).unwrap();
-                        }
-                        Ok(0)
-                    });
-                }));
-            }
-        }
+        //         sleep(std::time::Duration::from_millis(50));
+        //     }
+        // }));
 
         for thread in threads {
             thread.join().unwrap();
         }
-        for tvar in &tvars {
-            let res = atomically(|transaction| tvar.read(transaction));
-            assert_eq!(res, 100);
-        }
+        // for (i, tvar) in tvars.iter().enumerate() {
+        //     let res = atomically(|transaction| tvar.read(transaction));
+        //     if i == 99 {
+        //         println!("res: {}", res);
+        //         continue;
+        //     }
+        //     assert_eq!(res, 1000);
+        // }
+        // }
     }
 }

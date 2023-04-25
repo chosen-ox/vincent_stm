@@ -16,7 +16,7 @@ pub type ArcAny = Arc<dyn Any + Send + Sync>;
 
 pub fn atomically<F, T>(f: F) -> T
 where
-    F: Fn(&mut Transaction) -> Result<T, T>,
+    F: Fn(&mut Transaction) -> Result<T, usize>,
 {
     Transaction::atomically(f)
 }
