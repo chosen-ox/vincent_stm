@@ -100,7 +100,6 @@ where
         self.arc_mtx.clone()
     }
 
-
     pub fn read(&self, transaction: &mut Transaction) -> Result<T, usize> {
         transaction.read(&self)
     }
@@ -127,10 +126,9 @@ where
     }
 }
 
-
 impl<T> TVar<T>
-    where
-        T: Any + Send + Sync + Clone + Debug,
+where
+    T: Any + Send + Sync + Clone + Debug,
 {
     pub fn debug_value(&self, transaction: &mut Transaction, msg: &str) {
         transaction.debug_value(&self, msg);
