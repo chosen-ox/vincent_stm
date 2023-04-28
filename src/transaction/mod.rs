@@ -3,6 +3,7 @@ pub mod log_vars;
 use std::any::Any;
 use std::collections::btree_map::Entry::{Occupied, Vacant};
 use std::collections::BTreeMap;
+use std::fmt::{Debug, Display};
 use std::sync::Arc;
 
 use self::log_vars::LogVar;
@@ -11,12 +12,14 @@ use crate::{Mtx, TVar};
 
 pub struct Transaction {
     vars: BTreeMap<Arc<Mtx>, LogVar>,
+    msg_log: Vec<String>,
 }
 
 impl Transaction {
     pub fn new() -> Transaction {
         Transaction {
             vars: BTreeMap::new(),
+            msg_log: Vec::new(),
         }
     }
 
@@ -148,6 +151,10 @@ impl Transaction {
                 }
             }
 
+            for msg in &self.msg_log {
+                println!("{}", msg);
+            }
+
             for mut lock in write_vec {
                 *lock += 1;
             }
@@ -195,6 +202,20 @@ impl Transaction {
         Ok(0)
     }
 
+    pub fn display_value<T: Any + Send + Sync + Clone + Display>(
+        &mut self,
+        var: &TVar<T>,
+        msg: &str,
+    ) {
+        let msg = format!("{} {}", msg, self.read(var).unwrap());
+        self.msg_log.push(msg);
+    }
+
+    pub fn debug_value<T: Any + Send + Sync + Clone + Debug>(&mut self, var: &TVar<T>, msg: &str) {
+        let msg = format!("{:?} {:?}", msg, self.read(var).unwrap());
+        self.msg_log.push(msg);
+    }
+
     fn downcast<T: Any + Clone>(var: Arc<dyn Any>) -> T {
         match var.downcast_ref::<T>() {
             Some(s) => s.clone(),
@@ -214,27 +235,27 @@ mod test_transaction {
     #[allow(unused_imports)]
     use std::thread::sleep;
 
-    // #[test]
-    // fn test_display() {
-    //     let tvar0 = TVar::new(1);
-    //     let tvar1 = TVar::new(2);
-    //     let tvar2 = TVar::new(3);
-    //     atomically(|transaction| {
-    //         tvar0.display_value(transaction, "tvar0 before modify");
-    //         tvar0.write(transaction, 10)?;
-    //         tvar0.display_value(transaction, "tvar0 after modify");
-    //
-    //         tvar1.display_value(transaction, "tvar1 before modify");
-    //         tvar1.write(transaction, 10)?;
-    //         tvar1.display_value(transaction, "tvar1 after modify");
-    //
-    //         tvar2.display_value(transaction, "tvar2 before modify");
-    //         tvar2.write(transaction, 10)?;
-    //         tvar2.display_value(transaction, "tvar2 after modify");
-    //
-    //         tvar1.read(transaction)
-    //     });
-    // }
+    #[test]
+    fn test_display() {
+        let tvar0 = TVar::new(1);
+        let tvar1 = TVar::new(2);
+        let tvar2 = TVar::new(3);
+        atomically(|transaction| {
+            tvar0.display_value(transaction, "tvar0 before modify");
+            tvar0.write(transaction, 10)?;
+            tvar0.display_value(transaction, "tvar0 after modify");
+
+            tvar1.display_value(transaction, "tvar1 before modify");
+            tvar1.write(transaction, 10)?;
+            tvar1.display_value(transaction, "tvar1 after modify");
+
+            tvar2.display_value(transaction, "tvar2 before modify");
+            tvar2.write(transaction, 10)?;
+            tvar2.display_value(transaction, "tvar2 after modify");
+
+            tvar1.read(transaction)
+        });
+    }
 
     #[test]
     fn test_multi_space() {
@@ -314,7 +335,7 @@ mod test_transaction {
                 for i in 0..10 {
                     atomically(|transaction| {
                         for _ in 0..100 {
-                            if let Ok(val) = tvars_cpy[0].read(transaction) {
+                            if let Ok(_val) = tvars_cpy[0].read(transaction) {
                                 tvars_cpy[0].write(transaction, i)?;
                             }
                         }
@@ -363,7 +384,6 @@ mod test_transaction {
 
     #[test]
     fn test_multi_variables() {
-
         // for _ in 0..10 {
         let space = Space::new(1);
         let mut tvars = Vec::with_capacity(100);
@@ -374,7 +394,6 @@ mod test_transaction {
         }
 
         for _ in 0..10 {
-
             let tvars_cpy = tvars.clone();
             threads.push(thread::spawn(move || {
                 atomically(|transaction| {

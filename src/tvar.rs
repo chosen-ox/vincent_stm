@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::cmp::Ordering;
+use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
@@ -54,7 +55,7 @@ impl Ord for Mtx {
         if Arc::ptr_eq(&self.space, &other.space) {
             return self.get_address().cmp(&other.get_address());
         }
-        self.space.id.cmp(&other.space.id)
+        self.space.get_address().cmp(&other.space.get_address())
     }
 }
 
@@ -107,6 +108,24 @@ where
 
     pub fn atomic_write(&self, value: T) {
         *self.arc_mtx.value.lock().unwrap() = Arc::new(value);
+    }
+}
+
+impl<T> TVar<T>
+where
+    T: Any + Send + Sync + Clone + Display,
+{
+    pub fn display_value(&self, transaction: &mut Transaction, msg: &str) {
+        transaction.display_value(&self, msg);
+    }
+}
+
+impl<T> TVar<T>
+where
+    T: Any + Send + Sync + Clone + Debug,
+{
+    pub fn debug_value(&self, transaction: &mut Transaction, msg: &str) {
+        transaction.debug_value(&self, msg);
     }
 }
 

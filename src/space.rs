@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
 #[cfg(test)]
 use std::thread::spawn;
@@ -42,25 +41,9 @@ impl Space {
         }
         false
     }
-}
 
-impl Eq for Space {}
-
-impl PartialEq for Space {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl PartialOrd for Space {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Space {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.id.cmp(&other.id)
+    pub fn get_address(&self) -> usize {
+        self as *const Space as usize
     }
 }
 
